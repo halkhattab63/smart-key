@@ -1,0 +1,103 @@
+// إدخال معرف الـ Spreadsheet هنا
+var SS = SpreadsheetApp.openById('1RImz45bWICd1FCJQ0yf6nFyScoOxlgELoih2PCckxKg');
+var timezone = "Asia/Karachi";
+
+function doPost(e) {
+  var result = {};
+  try { 
+    var parsedData = JSON.parse(e.postData.contents);
+  } 
+  catch(error) {
+    Logger.log("Parsing Error: " + error.message);
+    return ContentService.createTextOutput("Error in parsing request body: " + error.message);
+  }
+
+  if (!parsedData || !parsedData.values || !parsedData.command || !parsedData.sheet_name) {
+    return ContentService.createTextOutput("Error! Invalid request data.");
+  }
+
+  var sheet = SS.getSheetByName(parsedData.sheet_name);
+  if (!sheet) {
+    return ContentService.createTextOutput("Error! Sheet not found.");
+  }
+
+  var dataArr = parsedData.values.split(",");
+  if (dataArr.length < 6) {
+    return ContentService.createTextOutput("Error! Missing required values.");
+  }
+
+  var student_id = dataArr[0];  // Student ID
+  var first_name = dataArr[1];  // First Name
+  var last_name  = dataArr[2];  // Last Name
+  var phone_number = dataArr[3];  // Phone Number
+  var address = dataArr[4];  // Address
+  var gate_number = dataArr[5];  // Gate Number
+  var curr_date = Utilities.formatDate(new Date(), timezone, "MM/dd/yyyy");
+  var curr_time = Utilities.formatDate(new Date(), timezone, "hh:mm:ss a");
+
+  // البحث عن الطالب في الصفوف السابقة
+  var row_number = findStudentRow(sheet, student_id);
+
+  if (row_number > 0) {
+    var time_out = sheet.getRange(row_number, 3).getValue(); // قراءة وقت الخروج
+
+    if (!time_out) {
+      sheet.getRange(row_number, 3).setValue(curr_time); // تحديث وقت الخروج
+      return ContentService.createTextOutput("Success: Time-out updated.");
+    }
+  }
+
+  // تنفيذ الأوامر القادمة من ESP8266
+  switch (parsedData.command) {
+    case "insert_row":
+      insertStudentRecord(sheet, student_id, curr_time, gate_number, curr_date, first_name, last_name, phone_number, address);
+      break;
+
+    case "append_row":
+      appendStudentRecord(sheet, student_id, curr_time, gate_number, curr_date, first_name, last_name, phone_number, address);
+      break;
+
+    default:
+      return ContentService.createTextOutput("Error! Unknown command.");
+  }
+
+  SpreadsheetApp.flush();
+  return ContentService.createTextOutput("Success");
+}
+
+/****************************************************************************************************
+ * البحث عن الطالب في الجدول وإرجاع رقم الصف
+****************************************************************************************************/
+function findStudentRow(sheet, student_id) {
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) { // يبدأ البحث من الصف الثاني (تخطي العنوان)
+    if (data[i][0] == student_id) {
+      return i + 1; // إرجاع رقم الصف
+    }
+  }
+  return -1; // لم يتم العثور على الطالب
+}
+
+/****************************************************************************************************
+ * إدراج بيانات الطالب في الصف الأول المتاح
+****************************************************************************************************/
+function insertStudentRecord(sheet, student_id, curr_time, gate_number, curr_date, first_name, last_name, phone_number, address) {
+  sheet.insertRows(2);
+  sheet.getRange("A2").setValue(student_id);
+  sheet.getRange("B2").setValue(curr_time); // وقت الدخول
+  sheet.getRange("C2").setValue(""); // وقت الخروج (فارغ مبدئيًا)
+  sheet.getRange("D2").setValue(gate_number);
+  sheet.getRange("E2").setValue(curr_date);
+  sheet.getRange("F2").setValue(first_name);
+  sheet.getRange("G2").setValue(last_name);
+  sheet.getRange("H2").setValue(phone_number);
+  sheet.getRange("I2").setValue(address);
+}
+
+/****************************************************************************************************
+ * إضافة سجل جديد في نهاية الجدول
+****************************************************************************************************/
+function appendStudentRecord(sheet, student_id, curr_time, gate_number, curr_date, first_name, last_name, phone_number, address) {
+  var newRow = [student_id, curr_time, "", gate_number, curr_date, first_name, last_name, phone_number, address];
+  sheet.appendRow(newRow);
+}
